@@ -3,6 +3,8 @@ import pycuda.autoinit
 import pycuda.driver as drv
 from pycuda.compiler import SourceModule
 
+from tridiagonal_solving.coefs import generate_coefs
+
 CUDA_SRC = r"""
 extern "C" __global__
 void cr_solve(const float *a_g, const float *b_g, const float *c_g,
@@ -17,7 +19,7 @@ void cr_solve(const float *a_g, const float *b_g, const float *c_g,
 
     const int sys = blockIdx.x;               
     const int tid = threadIdx.x;              
-    const int nthreads0 = blockDim.x;          
+    const int nthreads0 = blockDim.x;     //сдвиг по блокам     
     const int base = sys * n;                 
 
     for (int i = tid; i < n; i += nthreads0) {
@@ -102,7 +104,7 @@ def cr_solve_pycuda(a, b, c, d):
     assert a.dtype == b.dtype == c.dtype == d.dtype == np.float32
     assert a.shape == b.shape == c.shape == d.shape
     num_systems, n = a.shape
-    assert n and (n & (n - 1) == 0), "n должно быть степенью 2"
+    # assert n and (n & (n - 1) == 0), "n должно быть степенью 2"  ?
 
     mod = SourceModule(CUDA_SRC)
     kern = mod.get_function("cr_solve")
@@ -128,12 +130,20 @@ def cr_solve_pycuda(a, b, c, d):
     kern(a_g, b_g, c_g, d_g, x_g, np.int32(n),
          block=block, grid=grid, shared=shared_bytes)
 
+    a_g.free()
+    b_g.free()
+    c_g.free()
+    d_g.free()
+    x_g.free()
+
     drv.memcpy_dtoh(x.reshape(-1), x_g)
     return x
 
 
 if __name__ == "__main__":
     n = 2 << 10
+
+    generate_coefs(n)
     # num_systems = 1
     # rng = np.random.default_rng(0)
     #
